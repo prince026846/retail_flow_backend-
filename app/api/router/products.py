@@ -67,6 +67,12 @@ async def create_product(
 
         new_product["id"] = str(new_product["_id"])
         del new_product["_id"]
+
+        # Invalidate all product-related caches so the new product shows up immediately
+        await cache_manager.delete_pattern("products:list:*")
+        await cache_manager.delete_pattern("products:search:*")
+        await cache_manager.delete_pattern("products:low-stock:*")
+        
         return new_product
 
     except Exception as e:

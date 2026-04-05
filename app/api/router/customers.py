@@ -56,7 +56,7 @@ async def create_customer(
 @router.get("/", response_model=CustomerListResponse)
 async def get_customers(
     page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(10, ge=1, le=100, description="Items per page"),
+    limit: int = Query(10, ge=1, le=1000, description="Items per page"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     current_user: dict = Depends(get_current_user)
 ):
