@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from app.db.mongodb import db_manager
 from uuid import uuid4
@@ -144,15 +144,20 @@ async def create_order_service(order,user:dict):
     return order_data
 
 
-async def get_orders_service(page: int = 1, limit: int = 10):
+async def get_orders_service(page: int = 1, limit: int = 10, days: Optional[int] = None):
 
     order_collection = db_manager.db["orders"]
     
     skip_value = (page - 1) * limit
 
+    query = {}
+    if days is not None:
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
+        query["created_at"] = {"$gte": start_date}
+
     orders = []
     
-    cursor = order_collection.find().sort("created_at", -1).skip(skip_value).limit(limit)
+    cursor = order_collection.find(query).sort("created_at", -1).skip(skip_value).limit(limit)
 
     async for order in cursor:
 
@@ -165,10 +170,24 @@ async def get_orders_service(page: int = 1, limit: int = 10):
             # For legacy orders that don't have either field, provide a default
             order["user_id"] = "legacy_user"
 
+        # Fetch customer info if available
+        if order.get("customer_id"):
+            try:
+                customer_collection = db_manager.db["customers"]
+                customer = await customer_collection.find_one({"_id": ObjectId(order["customer_id"])})
+                if customer:
+                    order["customer_name"] = customer.get("name")
+                    order["customer_phone"] = customer.get("phone")
+            except:
+                pass
+
         # Ensure response shape is consistent for optional linked customer
         if "customer_id" not in order:
             order["customer_id"] = None
         
+        if "customer_name" not in order:
+            order["customer_name"] = "Guest Customer"
+
         # ADD THIS:
         if "payment_method" not in order:
             order["payment_method"] = None
@@ -248,13 +267,27 @@ async def generate_and_send_bill(order_data: dict, user: dict, customer_id: Opti
         whatsapp_result = {"success": False, "message": "No customer phone number"}
         
         if customer_data and customer_data.get("phone"):
-            # Build bill URL
-            bill_url = f"/api/orders/{order_id}/bill"
+            # Build absolute bill URL for WhatsApp
+            base_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+            # If backend is on Render/Railway, we might need the backend URL instead for direct download
+            # But usually frontend handles the display. 
+            # However, the bill download is a backend endpoint /orders/{id}/bill
+            # Let's use the BACKEND_URL if possible, or just the current base.
             
+            # For simplicity, if we are in production, we should have a public URL.
+            # I'll use a new setting or just FRONTEND_URL if it points to backend proxy
+            bill_url = f"{base_url.rstrip('/')}/orders/{order_id}/bill"
+            # Wait, the frontend doesn't have a /orders/{id}/bill page. 
+            # The BACKEND has the /orders/{id}/bill endpoint.
+            # So the link should point to the BACKEND.
+            
+            backend_url = os.getenv("BACKEND_URL", base_url) # Fallback to base
+            bill_url = f"{backend_url.rstrip('/')}/orders/{order_id}/bill"
+
             whatsapp_result = await send_bill_whatsapp(
                 phone_number=customer_data["phone"],
                 order_data=order_data,
-                shop_name=shop_settings.business_name,
+                shop_name=shop_info["business_name"],
                 bill_url=bill_url,
                 total=order_data.get("total_price", 0)
             )

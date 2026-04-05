@@ -188,22 +188,21 @@ def _normalize(password: str, salt: str) -> str:
     combined = f"{password}{salt}".encode("utf-8")
     return hashlib.sha256(combined).hexdigest()
 
+def hash_password_with_salt(password: str, salt: str = None):
+    # Truncate password to 72 bytes for bcrypt compatibility
+    # and combine with salt for extra security
+    if salt is None:
+        salt = generate_salt()
+    
+    normalized = _normalize(password, salt)
+    hashed = pwd_context.hash(normalized)
+    
+    return hashed, salt
 
-# def hash_password_with_salt(password: str, salt: str = None):
-#     print("🔥 RAW PASSWORD LENGTH:", len(password))
-    
-#     normalized = _normalize(password, salt)
-    
-#     print("✅ NORMALIZED LENGTH:", len(normalized))
-    
-#     hashed = pwd_context.hash(normalized)
-    
-#     return hashed, salt
 
-
-# def verify_password_with_salt(plain_password: str, hashed_password: str, salt: str) -> bool:
-#     normalized = _normalize(plain_password, salt)
-#     return pwd_context.verify(normalized, hashed_password)
+def verify_password_with_salt(plain_password: str, hashed_password: str, salt: str) -> bool:
+    normalized = _normalize(plain_password, salt)
+    return pwd_context.verify(normalized, hashed_password)
 
 
 # ------------------- LEGACY SUPPORT -------------------

@@ -116,8 +116,19 @@ async def download_bill(
         }
     )
     
-    # Add CORS headers
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    # Add CORS headers based on settings
+    from app.core.config import settings
+    origin = request.headers.get("origin")
+    allowed_origins = settings.ALLOWED_ORIGINS or []
+    
+    if settings.DEBUG:
+        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+    elif origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    else:
+        # Fallback to first allowed origin or none
+        response.headers["Access-Control-Allow-Origin"] = allowed_origins[0] if allowed_origins else ""
+        
     response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
     response.headers["Access-Control-Allow-Credentials"] = "true"

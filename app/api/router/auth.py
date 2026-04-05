@@ -211,25 +211,17 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             detail=f"Account is locked. Try again in {remaining_minutes} minutes."
         )
     
-    password_valid = verify_password(
-        sanitized_password,
-        user["hashed_password"]
-    )
-
-
-
-    # # Handle both old users (no salt) and new users (with salt)
-    # password_valid = False
-    # if user.get("salt"):
-    # # if "salt" in user:
-    #     # New user with salted password
-    #     password_valid = verify_password_with_salt(
-    #         sanitized_password, user["hashed_password"], user["salt"]
-    #     )
-    # else:
-    #     # Old user with legacy password hash
-    #     from app.core.security import verify_password
-    #     password_valid = verify_password(sanitized_password, user["hashed_password"])
+    # Handle both old users (no salt) and new users (with salt)
+    password_valid = False
+    if user.get("salt"):
+        # New user with salted password
+        from app.core.security import verify_password_with_salt
+        password_valid = verify_password_with_salt(
+            sanitized_password, user["hashed_password"], user["salt"]
+        )
+    else:
+        # Old user with legacy password hash
+        password_valid = verify_password(sanitized_password, user["hashed_password"])
     
     if not password_valid:
         # Increment failed attempts

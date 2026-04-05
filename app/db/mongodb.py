@@ -39,21 +39,26 @@ async def connect_to_mongo():
         # Test connection
         db_manager.client.admin.command('ping')
         db_manager.db = db_manager.client[settings.DATABASE_NAME]
-        print(f"✅ Connected to Mongo Atlas: {settings.DATABASE_NAME}")
+        print(f"[OK] Connected to Mongo Atlas: {settings.DATABASE_NAME}")
         
         # Test actual database operation to verify write access
-        test_doc = {"connection_test": True, "timestamp": "2026-03-18", "env": "production" if is_production else "development"}
+        from datetime import datetime
+        test_doc = {
+            "connection_test": True, 
+            "timestamp": datetime.now().isoformat(), 
+            "env": "production" if is_production else "development"
+        }
         result = await db_manager.db["connection_test"].insert_one(test_doc)
         await db_manager.db["connection_test"].delete_one({"_id": result.inserted_id})
-        print("✅ Atlas database operation test: SUCCESS")
+        print("[OK] Atlas database operation test: SUCCESS")
         return
         
     except Exception as e:
-        print(f"❌ Atlas connection failed: {e}")
+        print(f"[FAIL] Atlas connection failed: {e}")
         
         # Only fallback to local if NOT in production
         if not is_production:
-            print("🔄 Falling back to local MongoDB for development...")
+            print("[retry] Falling back to local MongoDB for development...")
             try:
                 local_url = "mongodb://localhost:27017"
                 db_manager.client = AsyncIOMotorClient(
@@ -63,46 +68,13 @@ async def connect_to_mongo():
                     connectTimeoutMS=5000
                 )
                 db_manager.db = db_manager.client["Retail_Flow_Dev"]
-                print(f"✅ Connected to Local MongoDB (fallback): Retail_Flow_Dev")
-                
-                # Test local database operation
-                test_doc = {"connection_test": True, "timestamp": "2026-03-18", "env": "local_fallback"}
-                result = await db_manager.db["connection_test"].insert_one(test_doc)
-                await db_manager.db["connection_test"].delete_one({"_id": result.inserted_id})
-                print("✅ Local database operation test: SUCCESS")
-                
+                print("[OK] Connected to Local MongoDB (fallback): Retail_Flow_Dev")
             except Exception as local_error:
-                print(f"❌ Local MongoDB fallback failed: {local_error}")
-                raise Exception(f"❌ All database connection attempts failed. Atlas error: {e}, Local error: {local_error}")
+                print(f"[FAIL] Local MongoDB fallback failed: {local_error}")
+                raise Exception(f"[FAIL] All database connection attempts failed. Atlas error: {e}, Local error: {local_error}")
         else:
-            # In production, try alternative Atlas connection before failing
-            print("🔄 Trying alternative Atlas connection...")
-            try:
-                # Try with different SSL settings for problematic environments
-                mongo_url = settings.MONGO_URL
-                db_manager.client = AsyncIOMotorClient(
-                    mongo_url,
-                    serverSelectionTimeoutMS=30000,
-                    socketTimeoutMS=30000,
-                    connectTimeoutMS=30000,
-                    retryWrites=True,
-                    retryReads=True,
-                    w=1,
-                    # Alternative SSL settings for restrictive environments
-                    tls=True,
-                    tlsAllowInvalidCertificates=True,  # Allow self-signed certs
-                    tlsAllowInvalidHostnames=True   # Allow hostname mismatches
-                )
-                
-                # Test connection
-                db_manager.client.admin.command('ping')
-                db_manager.db = db_manager.client[settings.DATABASE_NAME]
-                print(f"✅ Connected to Mongo Atlas (relaxed SSL): {settings.DATABASE_NAME}")
-                return
-                
-            except Exception as alt_error:
-                print(f"❌ Alternative Atlas connection failed: {alt_error}")
-                raise Exception(f"❌ Production Atlas connection failed. Primary: {e}, Alternative: {alt_error}")
+            # In production, we don't fallback to local. Re-raise Atlas error.
+            raise Exception(f"[FAIL] Production Atlas connection failed: {e}")
 
 async def close_mongo_connection():
     if db_manager.client:

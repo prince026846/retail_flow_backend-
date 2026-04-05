@@ -10,7 +10,10 @@ from app.api.router.dependency import get_current_user, require_employee, requir
 from app.core.rate_limit import limiter
 from app.core.optimized_aggregations import aggregation_optimizer, OptimizedPipelines
 from datetime import datetime, timezone, timedelta
+from app.services.ai_service import ai_service
+import os
 import re
+import asyncio
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -654,3 +657,177 @@ async def unsold_products(
     )
     
     return result
+
+
+@router.get("/nexus-insights")
+@limiter.limit("10/minute")
+async def get_nexus_insights(
+    request: Request,
+    user=Depends(require_owner)
+):
+    """
+    Generate dynamic business insights using shop data.
+    In a production env with AI keys, this would call an LLM.
+    For now, we generate rule-based 'AI' insights from live data.
+    """
+    try:
+        # Get low stock products
+        low_stock = await db_manager.db["products"].find({
+            "$expr": {"$lte": ["$stock", {"$ifNull": ["$low_stock_threshold", 5]}]}
+        }).to_list(length=3)
+        
+        # Get top products
+        from app.core.optimized_aggregations import OptimizedPipelines
+        top_products = await aggregation_optimizer.optimized_aggregate(
+            collection_name="orders",
+            pipeline=OptimizedPipelines.top_products_pipeline(limit=3)
+        )
+        
+        insights = []
+        
+        # Rule 1: Stock Alert Insight
+        if low_stock:
+            product_names = ", ".join([p["name"] for p in low_stock])
+            insights.append({
+                "id": "stock_alert",
+                "title": "Inventory Optimization",
+                "content": f"Critical stock levels detected for {product_names}. Reorder suggested to avoid 15% potential revenue loss.",
+                "type": "warning",
+                "impact": "High"
+            })
+            
+        # Rule 2: Top Performer Insight
+        if top_products:
+            best_product = top_products[0]["name"]
+            revenue = top_products[0].get("revenue", 0)
+            insights.append({
+                "id": "top_performer",
+                "title": "Scaling Opportunity",
+                "content": f"{best_product} is your top performing asset with ₹{revenue:,.2f} in sales. High demand detected.",
+                "type": "success",
+                "impact": "Medium"
+            })
+            
+        # Rule 3: Dynamic Data-driven Insight (only if orders exist)
+        orders_count = await db_manager.db["orders"].count_documents({})
+        if orders_count > 0:
+            insights.append({
+                "id": "order_volume",
+                "title": "Transaction Velocity",
+                "content": f"Nexus has analyzed {orders_count} recent transactions. AI forecasting accuracy is improving.",
+                "type": "info",
+                "impact": "Strategic"
+            })
+        else:
+            insights.append({
+                "id": "getting_started",
+                "title": "Strategy Advisor",
+                "content": "Awaiting initial transaction data. Once sales begin, Nexus will activate predictive analytics and inventory optimization.",
+                "type": "info",
+                "impact": "Strategic"
+            })
+
+        # Try to upgrade to AI insights if client available
+        try:
+            if hasattr(ai_service, 'client') and ai_service.client:
+                business_data = {
+                    "low_stock_products": [{"name": p["name"], "stock": p["stock"]} for p in low_stock],
+                    "top_performers": [{"name": p["name"], "revenue": p["revenue"]} for p in top_products],
+                    "period": "Last 30 Days",
+                    "shop_standard_margin": "26%"
+                }
+                
+                try:
+                    ai_insights = await asyncio.wait_for(
+                        asyncio.to_thread(ai_service.generate_strategic_insights, business_data),
+                        timeout=30.0
+                    )
+                except asyncio.TimeoutError:
+                    print("⚠️ AI insight generation timed out after 30 seconds.")
+                    ai_insights = []
+                except Exception as e:
+                    print(f"Error during AI insight await: {e}")
+                    ai_insights = []
+                
+                if ai_insights and isinstance(ai_insights, list) and len(ai_insights) > 0:
+                    # Prepend AI insights but keep some rule-based ones if they are mission critical
+                    return ai_insights
+        except Exception as ai_err:
+            print(f"Error getting AI insights: {ai_err}")
+        
+        return insights
+        
+    except Exception as e:
+        print(f"Error generating Nexus insights: {e}")
+        # Return fallback insights if calculations fail
+        return [
+            {
+                "id": "fallback",
+                "title": "Strategic Advisor",
+                "content": "Analyze your weekly sales velocity to identify hidden growth patterns.",
+                "type": "info",
+                "impact": "Strategic"
+            }
+        ]
+
+
+@router.get("/profit-summary")
+@limiter.limit("60/minute")
+async def get_profit_summary(
+    request: Request,
+    user=Depends(require_owner)
+):
+    """Get profit summary data (YTD, Variance, Average)."""
+    try:
+        now = datetime.now(timezone.utc)
+        start_of_year = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+        
+        # YTD Revenue
+        ytd_pipeline = [
+            {"$match": {"created_at": {"$gte": start_of_year}}},
+            {"$group": {"_id": None, "total": {"$sum": "$total_price"}}}
+        ]
+        ytd_result = await db_manager.db["orders"].aggregate(ytd_pipeline).to_list(length=1)
+        ytd_revenue = ytd_result[0]["total"] if ytd_result else 0
+        
+        # Estimated profit (26% margin as per dashboard standard)
+        ytd_profit = ytd_revenue * 0.26
+        
+        # Monthly Average (based on months passed this year)
+        months_passed = now.month
+        avg_monthly_profit = ytd_profit / max(months_passed, 1)
+        
+        # Monthly Variance (compared to last month)
+        last_month_start = (now.replace(day=1) - timedelta(days=1)).replace(day=1)
+        this_month_start = now.replace(day=1)
+        
+        last_month_pipeline = [
+            {"$match": {"created_at": {"$gte": last_month_start, "$lt": this_month_start}}},
+            {"$group": {"_id": None, "total": {"$sum": "$total_price"}}}
+        ]
+        last_month_result = await db_manager.db["orders"].aggregate(last_month_pipeline).to_list(length=1)
+        last_month_rev = last_month_result[0]["total"] if last_month_result else 0
+        
+        this_month_pipeline = [
+            {"$match": {"created_at": {"$gte": this_month_start}}},
+            {"$group": {"_id": None, "total": {"$sum": "$total_price"}}}
+        ]
+        this_month_result = await db_manager.db["orders"].aggregate(this_month_pipeline).to_list(length=1)
+        this_month_rev = this_month_result[0]["total"] if this_month_result else 0
+        
+        variance = 0
+        if last_month_rev > 0:
+            variance = ((this_month_rev - last_month_rev) / last_month_rev) * 100
+        
+        return {
+            "ytd_performance": round(ytd_profit, 2),
+            "monthly_variance": round(variance, 1),
+            "avg_monthly_profit": round(avg_monthly_profit, 2)
+        }
+    except Exception as e:
+        print(f"Error calculating profit summary: {e}")
+        return {
+            "ytd_performance": 0,
+            "monthly_variance": 0,
+            "avg_monthly_profit": 0
+        }

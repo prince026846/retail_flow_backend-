@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from app.db.mongodb import db_manager
 from app.api.router.dependency import get_current_user, require_owner
 from app.core.rate_limit import limiter
+from app.schemas.user_schema import UserCreate
+from app.core.security import hash_password
 from bson import ObjectId
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -358,3 +360,87 @@ async def get_employee_stats(
     except Exception as e:
         print(f"Error getting employee stats: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch employee statistics")
+
+
+@router.post("/")
+@limiter.limit("10/minute")
+async def add_employee(
+    request: Request,
+    employee_in: UserCreate,
+    user=Depends(require_owner)
+):
+    """Add a new employee (Only for Owners)."""
+    try:
+        users_collection = db_manager.db["users"]
+        
+        # Check if email already exists
+        existing_user = await users_collection.find_one({"email": employee_in.email})
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+            
+        # Prepare employee data
+        hashed_password = hash_password(employee_in.password)
+        
+        # Forced role to employee if it's not already restricted
+        role = "employee" if employee_in.role != "admin" else "employee"
+        
+        employee_dict = {
+            "username": employee_in.username,
+            "email": employee_in.email,
+            "hashed_password": hashed_password,
+            "role": role,
+            "is_active": True,
+            "is_email_verified": True, # Owners bypass verification for their staff
+            "created_at": datetime.now(timezone.utc),
+            "failed_attempts": 0,
+            "lockout_until": None
+        }
+        
+        result = await users_collection.insert_one(employee_dict)
+        
+        return {
+            "id": str(result.inserted_id),
+            "username": employee_in.username,
+            "email": employee_in.email,
+            "role": role,
+            "message": "Employee added successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error adding employee: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add employee")
+
+
+@router.delete("/{employee_id}")
+@limiter.limit("10/minute")
+async def remove_employee(
+    request: Request,
+    employee_id: str = Path(..., description="Employee ID"),
+    user=Depends(require_owner)
+):
+    """Remove an employee (Only for Owners)."""
+    try:
+        if not ObjectId.is_valid(employee_id):
+            raise HTTPException(status_code=400, detail="Invalid employee ID")
+            
+        users_collection = db_manager.db["users"]
+        
+        # Ensure we don't delete an owner
+        employee = await users_collection.find_one({"_id": ObjectId(employee_id)})
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found")
+            
+        if employee.get("role") == "owner":
+            raise HTTPException(status_code=403, detail="Cannot remove an owner account")
+            
+        await users_collection.delete_one({"_id": ObjectId(employee_id)})
+        
+        return {"message": "Employee removed successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error removing employee: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove employee")

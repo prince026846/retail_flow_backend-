@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Query
+from typing import Optional
 from app.schemas.order_schema import OrderCreate, OrderResponse
 from app.api.router.dependency import get_current_user, require_employee, require_owner
 from app.services.order_service import create_order_service, get_orders_service
@@ -123,7 +124,8 @@ async def create_order(
 async def get_orders(
     page: int = Query(1, ge=1, le=1000, description="Page number for pagination"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    days: Optional[int] = Query(None, ge=1, le=365, description="Filter orders by last X days"),
     current_user: dict = Depends(get_current_user)
 ):
 
-    return await get_orders_service(page, limit)
+    return await get_orders_service(page, limit, days)

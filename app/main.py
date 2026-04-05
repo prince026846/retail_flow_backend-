@@ -41,10 +41,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"MongoDB connection failed: {e}")
 
-    # ✅ Safe Redis connection
+    # Safe Redis connection (connect() may fail silently; check client)
     try:
         await cache_manager.connect()
-        print("Redis connected")
+        if cache_manager.redis_client is not None:
+            print("Redis connected")
+        else:
+            print("Redis unavailable (continuing without cache)")
     except Exception as e:
         print(f"Redis connection failed: {e}")
 
@@ -127,7 +130,7 @@ setup_error_handlers(app)
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
     
-    print("🔥 ERROR OCCURRED:")
+    print("[ERROR] Unhandled exception:")
     traceback.print_exc()   # ✅ full error in console
 
     return JSONResponse(
@@ -153,34 +156,32 @@ if not settings.DEBUG:
     )
 
 # CORS configuration - Dynamic based on environment
-origins = settings.ALLOWED_ORIGINS
+origins = settings.ALLOWED_ORIGINS or []
 
-# Add production origins if not in development
-if not settings.DEBUG:
-    origins.extend([
-        "https://retailflow-backend-ps8t.onrender.com",
-        "https://retail-flow.netlify.app"
-    ])
+# Add defined frontend URL if present
+if settings.FRONTEND_URL:
+    origins.append(settings.FRONTEND_URL)
 
-# Fallback: Allow all origins in production if CORS issues persist
-if not settings.DEBUG:
-    print(f"CORS Origins: {origins}")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # Temporary fix for production CORS issues
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "CONNECT"],
-        allow_headers=["*"],  # Allow all headers
-    )
-else:
-    # Development CORS - allow localhost origins
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # Allow all origins for development
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "CONNECT"],
-        allow_headers=["*"],  # Allow all headers
-    )
+# Add production and common origins
+origins.extend([
+    "https://retailflow-backend-ps8t.onrender.com",
+    "https://retail-flow.netlify.app",
+    "http://localhost:5173",  # Vite default
+    "http://127.0.0.1:5173",
+])
+
+# Remove duplicates
+origins = list(set(origins))
+
+print(f"[OK] Loaded CORS Origins: {origins}")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins if not settings.DEBUG else ["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+)
 
 # Response compression middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
