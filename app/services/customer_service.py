@@ -236,8 +236,9 @@ async def search_customers_service(search_query: str, page: int = 1, limit: int 
     """
     customer_collection = db_manager.db["customers"]
     
-    # Create search regex pattern (case-insensitive)
-    search_pattern = re.compile(search_query, re.IGNORECASE)
+    # Create search regex pattern (case-insensitive and escaped for safety)
+    escaped_query = re.escape(search_query)
+    search_pattern = re.compile(escaped_query, re.IGNORECASE)
     
     # Build search query
     query_filter = {

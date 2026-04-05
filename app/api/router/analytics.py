@@ -782,22 +782,38 @@ async def get_profit_summary(
         now = datetime.now(timezone.utc)
         start_of_year = datetime(now.year, 1, 1, tzinfo=timezone.utc)
         
-        # YTD Revenue
-        ytd_pipeline = [
+        # YTD Profit (Actual Profit = price - cost_price)
+        ytd_profit_pipeline = [
             {"$match": {"created_at": {"$gte": start_of_year}}},
-            {"$group": {"_id": None, "total": {"$sum": "$total_price"}}}
+            {"$unwind": "$items"},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_profit": {
+                        "$sum": {
+                            "$multiply": [
+                                {
+                                    "$subtract": [
+                                        "$items.price",
+                                        {"$ifNull": ["$items.cost_price", {"$multiply": ["$items.price", 0.74]}]}
+                                    ]
+                                },
+                                "$items.quantity"
+                            ]
+                        }
+                    }
+                }
+            }
         ]
-        ytd_result = await db_manager.db["orders"].aggregate(ytd_pipeline).to_list(length=1)
-        ytd_revenue = ytd_result[0]["total"] if ytd_result else 0
         
-        # Estimated profit (26% margin as per dashboard standard)
-        ytd_profit = ytd_revenue * 0.26
+        ytd_result = await db_manager.db["orders"].aggregate(ytd_profit_pipeline).to_list(length=1)
+        ytd_profit = ytd_result[0]["total_profit"] if ytd_result else 0
         
         # Monthly Average (based on months passed this year)
         months_passed = now.month
         avg_monthly_profit = ytd_profit / max(months_passed, 1)
         
-        # Monthly Variance (compared to last month)
+        # Calculate Revenue for Variance (Current vs Last Month)
         last_month_start = (now.replace(day=1) - timedelta(days=1)).replace(day=1)
         this_month_start = now.replace(day=1)
         

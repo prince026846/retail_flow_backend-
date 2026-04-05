@@ -98,11 +98,11 @@ async def create_order_service(order,user:dict):
 
         order_items.append({
                 "product_id": str(product["_id"]),
-                "barcode": product["barcode"],
+                "barcode": product.get("barcode"),
                 "name": product["name"],
                 "price": product["price"],
+                "cost_price": product.get("cost_price", 0.0),
                 "quantity": item.quantity
-                
         })
 
         await product_collection.update_one(

@@ -386,6 +386,7 @@ async def add_employee(
         
         employee_dict = {
             "username": employee_in.username,
+            "name": employee_in.username, # Add name for UI consistency
             "email": employee_in.email,
             "hashed_password": hashed_password,
             "role": role,
