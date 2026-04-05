@@ -32,10 +32,10 @@ async def create_product(
             detail="Product name must be at least 2 characters long"
         )
     
-    if product.price <= 0:
+    if product.price < 0:
         raise HTTPException(
             status_code=400,
-            detail="Price must be greater than 0"
+            detail="Price cannot be negative"
         )
     
     if product.stock < 0:
@@ -50,22 +50,31 @@ async def create_product(
             detail="Low stock threshold cannot be negative"
         )
     
-    if product.barcode and not re.match(r'^[A-Za-z0-9-_]+$', product.barcode):
+    if product.barcode and not re.match(r'^[A-Za-z0-9\s\-_]+$', product.barcode):
         raise HTTPException(
             status_code=400,
-            detail="Barcode can only contain letters, numbers, hyphens, and underscores"
+            detail="Barcode can only contain letters, numbers, spaces, hyphens, and underscores"
         )
 
     product_dict = product.model_dump()
 
-    result = await db_manager.db["products"].insert_one(product_dict)
+    try:
+        result = await db_manager.db["products"].insert_one(product_dict)
+        new_product = await db_manager.db["products"].find_one({"_id": result.inserted_id})
+        
+        if not new_product:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created product")
 
-    new_product = await db_manager.db["products"].find_one({"_id": result.inserted_id})
+        new_product["id"] = str(new_product["_id"])
+        del new_product["_id"]
+        return new_product
 
-    new_product["id"] = str(new_product["_id"])
-    del new_product["_id"]
-
-    return new_product
+    except Exception as e:
+        print(f"❌ DATABASE ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error: {str(e)}"
+        )
 
 @router.get("/", response_model=list[ProductResponse])
 async def get_products(
