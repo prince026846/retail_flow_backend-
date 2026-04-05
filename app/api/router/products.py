@@ -85,7 +85,7 @@ async def create_product(
 @router.get("/", response_model=list[ProductResponse])
 async def get_products(
     page: int = Query(1, ge=1, le=1000, description="Page number for pagination"),
-    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    limit: int = Query(10, ge=1, le=1000, description="Number of items per page"),
     user=Depends(get_current_user)
 ):
     cache_key = product_cache_key(page=page, limit=limit)
@@ -110,7 +110,7 @@ async def get_products(
 @router.get("/low-stock",response_model=List[LowStockProductResponse])
 async def get_low_stock_products(
     page: int = Query(1, ge=1, le=1000, description="Page number for pagination"),
-    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    limit: int = Query(10, ge=1, le=1000, description="Number of items per page"),
     user=Depends(get_current_user)
 ):
     cache_key = f"products:low-stock:{page}:{limit}"
@@ -142,7 +142,7 @@ async def get_low_stock_products(
 async def search_products(
     q: str = Query(..., min_length=1, max_length=100, description="Search query"),
     page: int = Query(1, ge=1, le=1000, description="Page number for pagination"),
-    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    limit: int = Query(10, ge=1, le=1000, description="Number of items per page"),
     user=Depends(get_current_user)
 ):
     # Validate search query
