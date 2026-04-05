@@ -4,11 +4,13 @@ from typing import Optional
 
 class ProductBase(BaseModel):
     name: str
-    category: Optional[str] = None 
     price: float
+    cost_price: Optional[float] = 0.0
     stock: int
     barcode: Optional[str] = None
-    low_stock_threshold: Optional[int] = None
+    category: Optional[str] = None 
+    supplier: Optional[str] = None
+    low_stock_threshold: Optional[int] = 10
     
 
 
@@ -20,8 +22,10 @@ class ProductUpdate(BaseModel):
     name: Optional[str] = None
     category: Optional[str] = None
     price: Optional[float] = None
+    cost_price: Optional[float] = None
     stock: Optional[int] = None
     barcode: Optional[str] = None
+    supplier: Optional[str] = None
     
 class LowStockProductResponse(BaseModel):
     name: str
