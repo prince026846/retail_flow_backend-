@@ -11,6 +11,7 @@ class ProductBase(BaseModel):
     category: Optional[str] = None 
     supplier: Optional[str] = None
     low_stock_threshold: Optional[int] = 10
+    image: Optional[str] = None
     
 
 
@@ -26,6 +27,8 @@ class ProductUpdate(BaseModel):
     stock: Optional[int] = None
     barcode: Optional[str] = None
     supplier: Optional[str] = None
+    low_stock_threshold: Optional[int] = None
+    image: Optional[str] = None
     
 class LowStockProductResponse(BaseModel):
     name: str
